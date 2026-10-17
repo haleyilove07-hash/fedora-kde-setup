@@ -122,6 +122,16 @@ check "hybrid: form factor" laptop "$(hw_form_factor)"
 check "hybrid: hybrid laptop" yes "$(yes_no hw_is_hybrid_laptop)"
 check "hybrid: CPU vendor" intel "$(hw_cpu_vendor)"
 
+# Intel VMD support is needed only when a PCI device is bound to the vmd driver.
+vmd="$tmp/intel-vmd"
+pci "$vmd" 0000:00:0e.0 8086 09ab 0x088000
+mkdir -p "$vmd/sys/bus/pci/drivers/vmd"
+ln -s "$vmd/sys/bus/pci/drivers/vmd" "$vmd/sys/bus/pci/devices/0000:00:0e.0/driver"
+HW_ROOT="$vmd"
+check "VMD: bound Intel VMD controller detected" yes "$(yes_no hw_has_vmd)"
+HW_ROOT="$hybrid"
+check "VMD: ordinary Intel laptop not detected" no "$(yes_no hw_has_vmd)"
+
 # Firmware without a useful chassis type: a system battery means laptop, a
 # mouse battery (scope Device) does not.
 root="$tmp/unknown-battery"

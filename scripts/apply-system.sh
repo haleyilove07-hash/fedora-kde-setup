@@ -30,9 +30,12 @@ retire() {  # repo-file live-path
 
 FORM_FACTOR=$(hw_form_factor)
 NVIDIA_BRANCH=$(hw_nvidia_driver)
-CPU_VENDOR=$(hw_cpu_vendor)
-if [ "$CPU_VENDOR" = intel ] && ! modinfo vmd >/dev/null 2>&1; then
-    echo "Intel CPU detected, but the running Fedora kernel has no vmd module; update the kernel before applying Intel RST/VMD support." >&2
+VMD_PRESENT=no
+if hw_has_vmd; then
+    VMD_PRESENT=yes
+fi
+if [ "$VMD_PRESENT" = yes ] && ! modinfo vmd >/dev/null 2>&1; then
+    echo "An Intel VMD controller is detected, but the running Fedora kernel has no vmd module; update the kernel before applying Intel RST/VMD support." >&2
     exit 1
 fi
 section "Hardware"
@@ -73,13 +76,13 @@ section "Kernel parameters"
 KERNEL_ARGS="nowatchdog audit=1 audit_backlog_limit=8192 skew_tick=1 preempt=full"
 # desktops trade a little idle power for cache locality; laptops keep power-efficient workqueues
 [ "$FORM_FACTOR" = desktop ] && KERNEL_ARGS="$KERNEL_ARGS workqueue.power_efficient=false"
-[ "$CPU_VENDOR" = intel ] && KERNEL_ARGS="$KERNEL_ARGS rd.driver.pre=vmd"
+[ "$VMD_PRESENT" = yes ] && KERNEL_ARGS="$KERNEL_ARGS rd.driver.pre=vmd"
 sudo grubby --update-kernel=ALL --remove-args="nowatchdog audit=0 audit=1 audit_backlog_limit skew_tick=1 workqueue.power_efficient=false preempt=full rd.driver.pre=vmd" 2>/dev/null || true
 sudo grubby --update-kernel=ALL --args="$KERNEL_ARGS"
 ok "Kernel parameters set for a $FORM_FACTOR (takes effect on next boot)"
 
 section "Intel RST/VMD storage"
-if [ "$CPU_VENDOR" = intel ]; then
+if [ "$VMD_PRESENT" = yes ]; then
     vmd_config=/etc/dracut.conf.d/10-vmd.conf
     sudo mkdir -p /etc/dracut.conf.d
     if ! cmp -s system/dracut-vmd.conf "$vmd_config"; then
@@ -89,7 +92,7 @@ if [ "$CPU_VENDOR" = intel ]; then
     ok "Intel vmd driver included in the initramfs and preloaded at boot"
 else
     retire system/dracut-vmd.conf /etc/dracut.conf.d/10-vmd.conf
-    ok "non-Intel CPU — Intel VMD support skipped"
+    ok "no active Intel VMD controller detected — skipped"
 fi
 
 section "SCX scheduler"

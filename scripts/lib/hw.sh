@@ -24,6 +24,17 @@ hw_has_gpu() {  # vendor
     return 1
 }
 
+# True when a PCI device is currently bound to Intel's VMD driver.
+hw_has_vmd() {
+    local dev driver
+    for dev in "$HW_ROOT"/sys/bus/pci/devices/*; do
+        [ -L "$dev/driver" ] || continue
+        driver=$(basename "$(readlink "$dev/driver")")
+        [ "$driver" = vmd ] && return 0
+    done
+    return 1
+}
+
 hw_gpu_count() {
     local n=0 _
     while read -r _; do n=$((n + 1)); done < <(hw_gpus)
