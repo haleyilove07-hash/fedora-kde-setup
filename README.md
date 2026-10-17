@@ -23,7 +23,7 @@ The scripts detect the hardware and adapt to it, so the same repo sets up a gami
 | Intel GPU | `intel-media-driver` for H.264/H.265 hardware video |
 | Desktop | tuned `latency-performance`, scx Gaming mode, `workqueue.power_efficient=false` |
 | Laptop | tuned keeps its battery-aware `balanced` profile, scx runs in Auto mode. With hybrid graphics the desktop stays on the integrated GPU |
-| Intel RST/VMD storage | Includes Fedora's `vmd` kernel driver in the initramfs and preloads it at boot on Intel systems |
+| Intel RST/VMD storage | Includes Fedora's `vmd` driver in the initramfs only when an Intel VMD controller is detected |
 | Windows in the UEFI boot list | GRUB remembers the last-booted OS |
 | btrfs root | Snapper snapshots |
 | AMD or Intel CPU | CPU temperature from `k10temp` or `coretemp` in Conky and `sysinfo` |
@@ -103,28 +103,45 @@ Developed and verified on an AMD desktop with a discrete NVIDIA card next to the
 
 ---
 
-## ASUS VivoBook 15 F1504ZA-WH42 (Windows + Fedora)
+## Fresh Install: Lenovo i3 / Intel Laptop
 
-The F1504ZA series is an Intel 12th-generation laptop with M.2 NVMe storage. Regional configurations and BIOS options can differ, so first check what this individual machine exposes; do not assume its Intel RST/VMD setting is enabled or switch it blindly.
+These steps are for a fresh Fedora KDE install on a Lenovo i3 or another Intel laptop. Hardware and firmware options vary by model; use the checks below rather than assuming a particular storage mode or boot setup.
 
-1. Back up important files and save the Windows BitLocker/device-encryption recovery key somewhere off the laptop. In Windows, turn off Fast Startup (Control Panel → Power Options → Choose what the power buttons do). Use Windows Disk Management to shrink the Windows partition and leave the resulting space **unallocated** for Fedora. Do not delete or format the EFI System, Microsoft Reserved, Windows, or recovery partitions.
-2. Create the Fedora USB with Fedora Media Writer, boot it using the UEFI USB entry, and choose **Try Fedora** first. In the live session, check that the internal SSD appears:
+### Prepare Windows and the laptop
 
-   ```bash
-   lsblk
-   lspci -nnk | grep -A3 -i 'Volume Management Device'
-   lsmod | grep '^vmd'
-   ```
+1. Back up important files. If Windows is installed or device encryption is enabled, save the BitLocker/device-encryption recovery key somewhere off the laptop before changing partitions, firmware settings, or boot entries.
+2. In Windows, disable Fast Startup (Control Panel → Power Options → Choose what the power buttons do), then fully shut down. For dual boot, use Windows Disk Management to shrink the Windows partition and leave the Fedora space **unallocated**. Do not delete or format the EFI System Partition, Microsoft Reserved partition, Windows partition, or recovery partitions.
+3. Keep the system in UEFI boot mode. Do not switch the storage controller from Intel RST/VMD to AHCI while Windows is installed unless Windows has first been prepared for the change; an unprepared change can prevent Windows from booting and trigger BitLocker recovery.
 
-   If the SSD is absent but an Intel VMD controller is listed, try `sudo modprobe vmd` and check `lsblk` again. Fedora uses the in-kernel `vmd` driver for VMD-managed NVMe storage; the Intel Windows IRST/F6 driver is not a Linux driver and should not be copied into Fedora. This repo ensures the installed Fedora system has `vmd` available early in boot. If the live installer still cannot see the SSD, stop before partitioning and check ASUS UEFI storage settings/support. Do **not** change RST/VMD to AHCI while Windows is installed until Windows has been prepared for that storage-mode change; otherwise Windows may fail to boot or request BitLocker recovery.
+### Make and boot the installer USB
 
-   If you ever reinstall Windows and its installer cannot see the SSD, get the Windows IRST/VMD "Load driver" package from [ASUS F1504ZA driver support](https://www.asus.com/supportonly/f1504za/helpdesk_download/) and follow [ASUS's storage-driver install instructions](https://www.asus.com/support/FAQ/1044458/). That Windows-only driver is separate from Fedora's built-in `vmd` module.
-3. Start the Fedora installer only after the SSD is visible. Install into the unallocated space created in Windows, keep the existing UEFI boot mode, and reuse the existing EFI System Partition without formatting it. Review the storage summary carefully before confirming.
-4. After Fedora is installed, run the quick setup below. Automatic chassis detection should classify this as a laptop; if the setup summary says desktop, set `FORM_FACTOR=laptop` in the git-ignored `setup.conf`. On this Intel laptop, `apply-system.sh` preloads `vmd` and includes it in the boot initramfs. When Windows is present in the UEFI boot list, `fedora-setup.sh` installs `os-prober` when it is available and enables GRUB's Windows probing and saved-default behavior; if the enabled Fedora repos do not provide `os-prober`, the script warns rather than failing the rest of setup.
+1. Download [Fedora Media Writer](https://fedoraproject.org/workstation/download/) and use it to select and write the Fedora KDE image for the release you want. This erases the selected USB drive, so verify the target carefully. Fedora Media Writer is the recommended option for a first install.
+2. Insert the USB, open the Lenovo one-time boot menu, and choose the entry prefixed with **UEFI** for the USB. Choose **Try Fedora** before installing. Check that the display, Wi-Fi, keyboard, touchpad, audio, and internal SSD work in the live session.
+3. If you prefer [Ventoy](https://www.ventoy.net/), it can boot the ISO copied to a Ventoy USB and keep other files on the drive. Fedora Media Writer is simpler; Ventoy's Secure Boot support may require its one-time key enrollment, so follow its prompts and keep Secure Boot enabled unless you have a specific reason not to.
 
-Keep Secure Boot enabled for Fedora's signed boot chain unless a specific driver requirement means you must enroll a key. Before any firmware or bootloader change, make sure the BitLocker recovery key is available.
+### Check storage and install
 
-**Keeping these files on the install USB:** writing the ISO with Fedora Media Writer or `dd` wipes the whole drive. Either use [Ventoy](https://www.ventoy.net/) (copy the ISO and this repo onto the same drive as normal files), use a second USB, or run `git clone https://github.com/26zl/fedora-kde-setup.git` from the live session once Wi-Fi is up.
+In the live session, check whether the SSD is visible and whether an Intel VMD controller is actually in use:
+
+```bash
+lsblk
+lspci -nnk | grep -A3 -i 'Volume Management Device'
+lsmod | grep '^vmd'
+```
+
+If the SSD appears in `lsblk` and `lspci` does not show `Kernel driver in use: vmd`, VMD support is not needed. If `lspci` lists a Volume Management Device but the SSD is absent or the controller has no driver in use, try `sudo modprobe vmd` and run `lsblk` again. A controller shown with `Kernel driver in use: vmd` is actively using VMD, so the setup keeps its driver available early in boot. Fedora uses its in-kernel `vmd` driver for VMD-managed NVMe storage; the Intel Windows IRST/F6 storage driver is not a Linux driver. Stop before partitioning if the SSD remains missing and check the laptop's firmware/storage settings or Fedora hardware support. Do not change RST/VMD to AHCI as a troubleshooting shortcut when Windows is installed.
+
+Start the installer only when the target disk is visible. For dual boot, install Fedora into the unallocated space, retain UEFI mode, and reuse the existing EFI System Partition without formatting it. Review the installer's storage summary carefully before confirming. For a full-disk clean install with no Windows to keep, verify the selected disk and understand that erasing it removes its existing data and partitions.
+
+After the first boot, update Fedora and reboot before running the [quick setup](#quick-setup-new-machine). `apply-system.sh` enables early-boot VMD support only if an Intel VMD controller is bound to Fedora's `vmd` driver; ordinary Intel laptops do not get forced VMD settings. When Windows is present, `fedora-setup.sh` configures GRUB's saved-default behavior and enables Windows probing if `os-prober` is available. If hardware auto-detection reports desktop on a laptop, set `FORM_FACTOR=laptop` in the git-ignored `setup.conf`.
+
+Keep Secure Boot enabled for Fedora's signed boot chain unless a specific driver requirement means you must enroll a key. Before firmware or bootloader changes, make sure the BitLocker recovery key is available.
+
+**Getting this repository onto the new install:** writing a Fedora image with Fedora Media Writer erases the USB. Use a second USB, keep the repository on a Ventoy drive, or clone it from the live session after connecting to Wi-Fi:
+
+```bash
+git clone https://github.com/26zl/fedora-kde-setup.git
+```
 
 ---
 
